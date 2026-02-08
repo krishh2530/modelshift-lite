@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.env/
+
+# OS
+.DS_Store
+
+# Data files
+data/reference/*
+data/live/*
+
+# SQLite
+*.db
+
+# Streamlit
+.streamlit/
