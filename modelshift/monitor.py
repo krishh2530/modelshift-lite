@@ -1,31 +1,52 @@
+import pandas as pd
+from modelshift.baseline import BaselineWindow
+from modelshift.drift.feature_drift import compute_feature_drift
+
+
 class ModelMonitor:
     """
     Main interface for ModelShift-Lite monitoring.
     """
 
-    def __init__(self, reference_data):
+    def __init__(self, reference_data: pd.DataFrame):
         """
         Initialize monitor with reference baseline data.
         """
-        self.reference_data = reference_data
+        self.baseline = BaselineWindow(reference_data)
         self.live_data = None
-        self.predictions = None
+        self.feature_drift_results = None
 
-    def update(self, live_data, predictions):
+    def update(self, live_data: pd.DataFrame):
         """
-        Update monitor with new live data and predictions.
+        Update monitor with new live data.
         """
-        self.live_data = live_data
-        self.predictions = predictions
+        if not isinstance(live_data, pd.DataFrame):
+            raise TypeError("Live data must be a pandas DataFrame")
 
-    def compute_drift(self):
-        """
-        Compute drift metrics between reference and live data.
-        """
-        pass
+        if live_data.empty:
+            raise ValueError("Live data cannot be empty")
 
-    def health_score(self):
+        self.live_data = live_data.copy()
+
+    def compute_feature_drift(self) -> dict:
         """
-        Aggregate drift metrics into a model health score.
+        Compute feature-level drift between baseline and live data.
         """
-        pass
+        if self.live_data is None:
+            raise RuntimeError("Live data not set. Call update() first.")
+
+        self.feature_drift_results = compute_feature_drift(
+            self.baseline.get_data(),
+            self.live_data
+        )
+
+        return self.feature_drift_results
+
+    def get_latest_feature_drift(self) -> dict:
+        """
+        Return last computed feature drift results.
+        """
+        if self.feature_drift_results is None:
+            raise RuntimeError("No feature drift computed yet.")
+
+        return self.feature_drift_results
