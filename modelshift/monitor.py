@@ -1,7 +1,7 @@
 import pandas as pd
 from modelshift.baseline import BaselineWindow
 from modelshift.drift.feature_drift import compute_feature_drift
-
+from modelshift.drift.severity import classify_severity, compute_health_score
 
 class ModelMonitor:
     """
@@ -50,3 +50,25 @@ class ModelMonitor:
             raise RuntimeError("No feature drift computed yet.")
 
         return self.feature_drift_results
+    def get_feature_severity(self) -> dict:
+        """
+        Return severity classification per feature.
+        """
+        if self.feature_drift_results is None:
+            raise RuntimeError("No feature drift computed yet.")
+
+        severity = {}
+        for feature, values in self.feature_drift_results.items():
+            severity[feature] = classify_severity(values["ks_statistic"])
+
+        return severity
+
+    def get_model_health_score(self) -> float:
+        """
+        Return overall model health score.
+        """
+        if self.feature_drift_results is None:
+            raise RuntimeError("No feature drift computed yet.")
+
+        return compute_health_score(self.feature_drift_results)
+
