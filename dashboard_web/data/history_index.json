@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-02-21T20:31:08",
+  "count": 4,
+  "items": [
+    {
+      "run_id": "20260221_203053",
+      "generated_at": "2026-02-21T20:31:07",
+      "status": "CRITICAL_DRIFT",
+      "clean_health": 98.01024743647605,
+      "drifted_health": 94.99204279315462,
+      "drifted_pred_ks": 0.15456747344959718,
+      "drifted_entropy_change": 0.0044,
+      "drifted_last_window_feature": "src_bytes",
+      "drifted_last_window_ks": 0.9368421052631579,
+      "payload_hash": "e93c42cdb7ebc117"
+    },
+    {
+      "run_id": "20260217_231450",
+      "generated_at": "2026-02-17T23:15:08",
+      "status": "CRITICAL_DRIFT",
+      "clean_health": 98.01024743647605,
+      "drifted_health": 94.99204279315462,
+      "drifted_pred_ks": 0.15456747344959718,
+      "drifted_entropy_change": 0.0044,
+      "drifted_last_window_feature": "src_bytes",
+      "drifted_last_window_ks": 0.9368421052631579,
+      "payload_hash": "bad7a413d83d4a01"
+    },
+    {
+      "run_id": "20260217_161514",
+      "generated_at": "2026-02-17T16:15:26",
+      "status": "CRITICAL_DRIFT",
+      "clean_health": 98.01024743647605,
+      "drifted_health": 94.99204279315462,
+      "drifted_pred_ks": 0.15456747344959718,
+      "drifted_entropy_change": 0.0044,
+      "drifted_last_window_feature": "src_bytes",
+      "drifted_last_window_ks": 0.9368421052631579,
+      "payload_hash": "abb86831cfdce5b1"
+    },
+    {
+      "run_id": "20260217_084039",
+      "generated_at": "2026-02-17T08:40:52",
+      "status": "UNKNOWN",
+      "clean_health": 98.01024743647605,
+      "drifted_health": 94.99204279315462,
+      "drifted_pred_ks": 0.15456747344959718,
+      "drifted_entropy_change": 0.0044,
+      "drifted_last_window_feature": "src_bytes",
+      "drifted_last_window_ks": 0.9368421052631579,
+      "payload_hash": "c88a244aec7e60d6"
+    }
+  ]
+}
