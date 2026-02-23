@@ -2,15 +2,14 @@
   "use strict";
 
   // =========================================================
-  // ModelShift-Lite Dashboard UI (app.js) — Fixed + Robust
+  // ModelShift-Lite Dashboard UI (app.js) — Optimized + Robust
   // =========================================================
-  // Fixes included:
-  // - Proper fetch timeout + abort for /api/results and /api/history
-  // - Analysis page no longer gets stuck on transient fetch errors
-  // - Theme button duplicate listener bug fixed
-  // - Safer initial page setup (ensures charts render on first load)
-  // - Optional API base support (window.MODELSHIFT_API_BASE)
-  // - Clearer error text while preserving last known dashboard values
+  // Added / improved:
+  // - Works with newer backend payloads (decision/taxonomy/top_drifted_features)
+  // - Root-cause panel (Top-K drifted features)
+  // - History rows can open/download archived reports
+  // - Backend clear-history integration
+  // - Still backward-compatible with older JSON schemas
 
   // -----------------------------
   // Config
@@ -28,6 +27,7 @@
   // Helpers
   // -----------------------------
   const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+  const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
   const el = (id) => document.getElementById(id);
 
   const safeUpper = (s) => String(s ?? "—").toUpperCase();
@@ -64,6 +64,14 @@
     if (!obj || typeof obj !== "object") return null;
     for (const k of keys) {
       if (isNum(obj[k])) return obj[k];
+    }
+    return null;
+  }
+
+  function pickStr(obj, keys) {
+    if (!obj || typeof obj !== "object") return null;
+    for (const k of keys) {
+      if (typeof obj[k] === "string" && obj[k].trim()) return obj[k];
     }
     return null;
   }
@@ -230,6 +238,10 @@
   let evalLatestBox = el("evalLatestBox");
   let evalPrevBox = el("evalPrevBox");
 
+  // Optional insight containers (injected if missing)
+  let decisionBox = el("decisionBox");
+  let rootCauseBox = el("rootCauseBox");
+
   const pages = {
     dash: el("page-dash"),
     analysis: el("page-analysis"),
@@ -251,6 +263,9 @@
     latestMeta: {},
     prevMeta: {},
 
+    latestDecision: null,
+    latestTopFeatures: [],
+
     zoom: Number(zoomSlider?.value ?? 3), // 1..10
     speed: Number(speedSlider?.value ?? 4), // 1..12
     playing: false,
@@ -267,6 +282,7 @@
     dirtyCharts: true,
     dirtyEval: true,
     dirtyHistory: true,
+    dirtyInsights: true,
     lastChartKey: "",
   };
 
@@ -308,6 +324,7 @@
     const status =
       run?.status ??
       run?.state ??
+      run?.decision?.status ??
       deepFind(run, (x) => x && typeof x === "object" && typeof x.status === "string")?.status ??
       "—";
 
@@ -321,13 +338,98 @@
     return { run_id, status, generated_at };
   }
 
+  function extractDecision(run) {
+    const d =
+      (isObj(run?.decision) && run.decision) ||
+      (isObj(run?.monitor_decision) && run.monitor_decision) ||
+      deepFind(
+        run,
+        (x) =>
+          isObj(x) &&
+          (typeof x.status === "string" || typeof x.severity === "string" || typeof x.taxonomy === "string") &&
+          isObj(x.signals)
+      );
+
+    if (!isObj(d)) return null;
+
+    return {
+      status: pickStr(d, ["status"]),
+      severity: pickStr(d, ["severity"]),
+      taxonomy: pickStr(d, ["taxonomy"]),
+      signals: isObj(d.signals) ? d.signals : {},
+      thresholds: isObj(d.thresholds) ? d.thresholds : {},
+    };
+  }
+
+  function extractTopDriftedFeatures(run) {
+    const direct =
+      (Array.isArray(run?.top_drifted_features) && run.top_drifted_features) ||
+      (Array.isArray(run?.root_causes) && run.root_causes) ||
+      deepFind(
+        run,
+        (x) =>
+          Array.isArray(x) &&
+          x.length > 0 &&
+          x.every(
+            (it) =>
+              isObj(it) &&
+              (typeof it.feature === "string" || typeof it.name === "string") &&
+              (isNum(it.ks_statistic) || isNum(it.ks))
+          )
+      );
+
+    if (Array.isArray(direct)) {
+      return direct
+        .map((it) => ({
+          feature: String(it.feature ?? it.name ?? "—"),
+          ks_statistic: isNum(it.ks_statistic) ? it.ks_statistic : (isNum(it.ks) ? it.ks : null),
+          p_value: isNum(it.p_value) ? it.p_value : null,
+          severity: typeof it.severity === "string" ? it.severity : null,
+        }))
+        .filter((it) => isNum(it.ks_statistic))
+        .sort((a, b) => b.ks_statistic - a.ks_statistic);
+    }
+
+    // Fallback: derive from feature_drift dict if present
+    const fd =
+      (isObj(run?.feature_drift) && run.feature_drift) ||
+      (isObj(run?.feature_drift_results) && run.feature_drift_results) ||
+      deepFind(run, (x) => {
+        if (!isObj(x)) return false;
+        const vals = Object.values(x);
+        if (!vals.length) return false;
+        const sample = vals[0];
+        return isObj(sample) && (isNum(sample.ks_statistic) || isNum(sample.ks));
+      });
+
+    if (!isObj(fd)) return [];
+
+    const out = [];
+    for (const [feature, v] of Object.entries(fd)) {
+      if (!isObj(v)) continue;
+      const ks = isNum(v.ks_statistic) ? v.ks_statistic : (isNum(v.ks) ? v.ks : null);
+      if (!isNum(ks)) continue;
+      out.push({
+        feature: String(feature),
+        ks_statistic: ks,
+        p_value: isNum(v.p_value) ? v.p_value : null,
+        severity: typeof v.severity === "string" ? v.severity : null,
+      });
+    }
+
+    out.sort((a, b) => b.ks_statistic - a.ks_statistic);
+    return out;
+  }
+
   function extractMetrics(run) {
     const summary = run?.summary && typeof run.summary === "object" ? run.summary : {};
+    const decision = extractDecision(run);
 
     const clean_health =
       summary?.clean_health ??
       run?.clean_health ??
       run?.metrics?.clean_health ??
+      decision?.signals?.clean_health ??
       deepFindNumberByKeyRegex(run, /^clean_health$/i) ??
       deepFindNumberByKeyRegex(run, /clean.*health/i);
 
@@ -335,6 +437,7 @@
       summary?.drifted_health ??
       run?.drifted_health ??
       run?.metrics?.drifted_health ??
+      decision?.signals?.drifted_health ??
       deepFindNumberByKeyRegex(run, /^drifted_health$/i) ??
       deepFindNumberByKeyRegex(run, /drift.*health/i);
 
@@ -342,15 +445,17 @@
       summary?.drifted_pred_ks ??
       run?.pred_ks ??
       run?.metrics?.pred_ks ??
+      decision?.signals?.prediction_ks ??
       deepFindNumberByKeyRegex(run, /pred.*ks/i);
 
     const delta_entropy =
       summary?.drifted_entropy_change ??
       run?.delta_entropy ??
       run?.metrics?.delta_entropy ??
+      decision?.signals?.entropy_change ??
       deepFindNumberByKeyRegex(run, /(delta|d).*entropy/i);
 
-    // Prefer new schema (summary feature + ks)
+    // Prefer new schema summary fields first
     let feat = null;
     const fName = summary?.drifted_last_window_feature;
     const fKs = summary?.drifted_last_window_ks;
@@ -366,8 +471,19 @@
             x &&
             typeof x === "object" &&
             (typeof x.feature === "string" || typeof x.name === "string") &&
-            isNum(x.ks)
+            (isNum(x.ks) || isNum(x.ks_statistic))
         );
+      if (feat && !isNum(feat.ks) && isNum(feat.ks_statistic)) {
+        feat = { ...feat, ks: feat.ks_statistic };
+      }
+    }
+
+    // Final fallback from top_drifted_features
+    if (!feat) {
+      const top = extractTopDriftedFeatures(run);
+      if (top.length) {
+        feat = { feature: top[0].feature, ks: top[0].ks_statistic, window_size: run?.window_size };
+      }
     }
 
     return { clean_health, drifted_health, pred_ks, delta_entropy, feat };
@@ -413,22 +529,54 @@
   // -----------------------------
   // Status badge
   // -----------------------------
-  function setStatusBadge(status) {
-    if (!statusBadge) return;
+function setLivePill(isLive) {
+  if (!livePill) return;
 
-    const s = safeUpper(status);
-    statusBadge.textContent = s;
-    statusBadge.style.borderColor = "rgba(255,255,255,0.12)";
-    statusBadge.style.background = "rgba(0,0,0,0.25)";
+  const dot = livePill.querySelector(".livepill__dot");
+  const txt = livePill.querySelector(".livepill__text");
 
-    if (s.includes("CRITICAL")) {
-      statusBadge.style.borderColor = "rgba(209,31,31,0.55)";
-      statusBadge.style.background = "rgba(209,31,31,0.12)";
-    } else if (s.includes("WARN")) {
-      statusBadge.style.borderColor = "rgba(255,170,0,0.45)";
-      statusBadge.style.background = "rgba(255,170,0,0.10)";
-    }
+  if (txt) txt.textContent = isLive ? "LIVE" : "DISCONNECTED";
+
+  // Blink only when live
+  livePill.classList.toggle("blink", !!isLive);
+
+  livePill.style.borderColor = isLive
+    ? "rgba(80, 200, 120, 0.45)"
+    : "rgba(209, 31, 31, 0.45)";
+
+  livePill.style.background = isLive
+    ? "rgba(80, 200, 120, 0.08)"
+    : "rgba(209, 31, 31, 0.10)";
+
+  if (dot) {
+    dot.style.background = isLive
+      ? "rgba(80, 200, 120, 0.95)"
+      : "rgba(209, 31, 31, 0.95)";
+    dot.style.boxShadow = isLive
+      ? "0 0 10px rgba(80, 200, 120, 0.55)"
+      : "0 0 10px rgba(209, 31, 31, 0.45)";
   }
+}
+  function setStatusBadge(status) {
+  if (!statusBadge) return;
+
+  const s = safeUpper(status);
+  statusBadge.textContent = s;
+  statusBadge.style.borderColor = "rgba(255,255,255,0.12)";
+  statusBadge.style.background = "rgba(0,0,0,0.25)";
+  statusBadge.style.color = "";
+
+  if (s.includes("CRITICAL")) {
+    statusBadge.style.borderColor = "rgba(209,31,31,0.55)";
+    statusBadge.style.background = "rgba(209,31,31,0.12)";
+  } else if (s.includes("WARN")) {
+    statusBadge.style.borderColor = "rgba(255,170,0,0.45)";
+    statusBadge.style.background = "rgba(255,170,0,0.10)";
+  } else if (s.includes("STABLE") || s.includes("OK")) {
+    statusBadge.style.borderColor = "rgba(80,200,120,0.45)";
+    statusBadge.style.background = "rgba(80,200,120,0.08)";
+  }
+}
 
   // -----------------------------
   // Ledger
@@ -470,6 +618,20 @@
   // -----------------------------
   // History
   // -----------------------------
+  function historyReportLinks(runId) {
+    if (!runId || runId === "—") return "";
+    const rid = encodeURIComponent(runId);
+    const openHref = apiUrl(`/api/report/${rid}`);
+    const dlHref = apiUrl(`/api/report/${rid}?download=1`);
+    return `
+      <span class="ms-inline-actions">
+        <a href="${openHref}" target="_blank" rel="noopener">OPEN</a>
+        <span>·</span>
+        <a href="${dlHref}" target="_blank" rel="noopener">DL</a>
+      </span>
+    `;
+  }
+
   function renderHistory() {
     if (!historyBody) return;
     historyBody.innerHTML = "";
@@ -485,7 +647,15 @@
       tdGen.textContent = r.generated_at || "—";
 
       const tdRun = document.createElement("td");
-      tdRun.textContent = r.run_id || "—";
+      tdRun.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span>${escapeHtml(r.run_id || "—")}</span>
+          ${historyReportLinks(r.run_id)}
+        </div>
+      `;
+      if (r.drifted_last_window_feature) {
+        tdRun.title = `Top feature: ${r.drifted_last_window_feature}${isNum(r.drifted_last_window_ks) ? ` (KS=${r.drifted_last_window_ks.toFixed(4)})` : ""}`;
+      }
 
       const tdStatus = document.createElement("td");
       tdStatus.textContent = r.status || "—";
@@ -507,6 +677,253 @@
 
       tr.append(tdSaved, tdGen, tdRun, tdStatus, tdC, tdD, tdK, tdE);
       historyBody.appendChild(tr);
+    }
+  }
+
+  // -----------------------------
+  // Decision / Root Cause UI + CSS injection
+  // -----------------------------
+  function ensureInsightCss() {
+    if (document.getElementById("ms-insight-css")) return;
+    const st = document.createElement("style");
+    st.id = "ms-insight-css";
+    st.textContent = `
+      .ms-insight-wrap{
+        margin-top:12px;
+        border:1px solid rgba(255,255,255,0.10);
+        background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.06));
+        padding:12px;
+      }
+      .ms-insight-title{
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-weight:900;
+        letter-spacing:1px;
+        opacity:0.92;
+        margin-bottom:10px;
+      }
+      .ms-chip-row{
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+        margin-bottom:10px;
+      }
+      .ms-chip{
+        border:1px solid rgba(255,255,255,0.12);
+        padding:6px 8px;
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:12px;
+        line-height:1;
+        background:rgba(0,0,0,0.20);
+      }
+      .ms-chip.bad{
+        border-color:rgba(209,31,31,0.45);
+        background:rgba(209,31,31,0.10);
+        color:rgba(255,220,220,0.95);
+      }
+      .ms-chip.warn{
+        border-color:rgba(255,170,0,0.45);
+        background:rgba(255,170,0,0.08);
+      }
+      .ms-chip.good{
+        border-color:rgba(80,200,120,0.40);
+        background:rgba(80,200,120,0.06);
+      }
+      .ms-signal-grid{
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:8px;
+      }
+      .ms-signal{
+        border:1px solid rgba(255,255,255,0.08);
+        padding:8px;
+        background:rgba(0,0,0,0.14);
+      }
+      .ms-signal .k{
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:11px;
+        opacity:0.75;
+        letter-spacing:.7px;
+      }
+      .ms-signal .v{
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:16px;
+        font-weight:800;
+        margin-top:3px;
+      }
+      .ms-rc-table-wrap{
+        overflow:auto;
+        border:1px solid rgba(255,255,255,0.08);
+      }
+      table.ms-rc-table{
+        width:100%;
+        border-collapse:collapse;
+        min-width:600px;
+      }
+      table.ms-rc-table th, table.ms-rc-table td{
+        padding:9px 10px;
+        border-bottom:1px solid rgba(255,255,255,0.08);
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:12px;
+        text-align:left;
+      }
+      table.ms-rc-table th{
+        opacity:0.85;
+        letter-spacing:.8px;
+      }
+      .ms-inline-actions{
+        display:inline-flex;
+        gap:4px;
+        opacity:0.85;
+        font-size:11px;
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+      }
+      .ms-inline-actions a{
+        color:inherit;
+        text-decoration:none;
+        border-bottom:1px dotted rgba(255,255,255,0.3);
+      }
+      .ms-muted{
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:12px;
+        opacity:0.68;
+      }
+      @media (max-width: 980px){
+        .ms-signal-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function ensureInsightBoxes() {
+    ensureInsightCss();
+
+    if (!decisionBox) {
+      decisionBox = document.createElement("div");
+      decisionBox.id = "decisionBox";
+      if (latestMostDrifted && latestMostDrifted.parentNode) {
+        latestMostDrifted.insertAdjacentElement("afterend", decisionBox);
+      } else if (pages.dash) {
+        pages.dash.appendChild(decisionBox);
+      }
+    }
+
+    if (!rootCauseBox) {
+      rootCauseBox = document.createElement("div");
+      rootCauseBox.id = "rootCauseBox";
+      if (decisionBox && decisionBox.parentNode) {
+        decisionBox.insertAdjacentElement("afterend", rootCauseBox);
+      } else if (pages.dash) {
+        pages.dash.appendChild(rootCauseBox);
+      }
+    }
+  }
+
+  function severityClass(sev) {
+    const s = safeUpper(sev);
+    if (s.includes("CRITICAL") || s.includes("HIGH")) return "bad";
+    if (s.includes("MEDIUM") || s.includes("WARN")) return "warn";
+    if (s.includes("LOW") || s.includes("STABLE")) return "good";
+    return "";
+  }
+
+  function renderInsights(latestRun) {
+    ensureInsightBoxes();
+
+    const decision = state.latestDecision || extractDecision(latestRun);
+    const topFeatures = Array.isArray(state.latestTopFeatures) ? state.latestTopFeatures : extractTopDriftedFeatures(latestRun);
+
+    // Decision panel
+    if (decisionBox) {
+      const chips = [];
+
+      if (decision?.status) {
+        chips.push(`<span class="ms-chip ${severityClass(decision.status)}">STATUS: ${escapeHtml(decision.status)}</span>`);
+      }
+      if (decision?.severity) {
+        chips.push(`<span class="ms-chip ${severityClass(decision.severity)}">SEVERITY: ${escapeHtml(decision.severity)}</span>`);
+      }
+      if (decision?.taxonomy) {
+        chips.push(`<span class="ms-chip">TAXONOMY: ${escapeHtml(decision.taxonomy)}</span>`);
+      }
+
+      const signals = isObj(decision?.signals) ? decision.signals : {};
+      const sigHtml = `
+        <div class="ms-signal-grid">
+          <div class="ms-signal"><div class="k">AVG_FEATURE_KS</div><div class="v">${fmt(signals.avg_feature_ks, 4)}</div></div>
+          <div class="ms-signal"><div class="k">MAX_FEATURE_KS</div><div class="v">${fmt(signals.max_feature_ks, 4)}</div></div>
+          <div class="ms-signal"><div class="k">PREDICTION_KS</div><div class="v">${fmt(signals.prediction_ks, 4)}</div></div>
+          <div class="ms-signal"><div class="k">COMPOSITE_SCORE</div><div class="v">${fmt(signals.composite_score, 4)}</div></div>
+        </div>
+      `;
+
+      if (decision) {
+        decisionBox.innerHTML = `
+          <div class="ms-insight-wrap">
+            <div class="ms-insight-title">DECISION ENGINE</div>
+            <div class="ms-chip-row">${chips.join("")}</div>
+            ${sigHtml}
+            <div class="ms-muted" style="margin-top:8px;">
+              ${signals.max_feature_name ? `Top signal feature: ${escapeHtml(signals.max_feature_name)} • ` : ""}
+              Feature count: ${isNum(signals.feature_count) ? String(signals.feature_count) : "—"}
+            </div>
+          </div>
+        `;
+      } else {
+        decisionBox.innerHTML = `
+          <div class="ms-insight-wrap">
+            <div class="ms-insight-title">DECISION ENGINE</div>
+            <div class="ms-muted">No composite decision block found in payload (backward-compatible mode).</div>
+          </div>
+        `;
+      }
+    }
+
+    // Root-cause panel
+    if (rootCauseBox) {
+      const rows = (topFeatures || []).slice(0, 8);
+      if (!rows.length) {
+        rootCauseBox.innerHTML = `
+          <div class="ms-insight-wrap">
+            <div class="ms-insight-title">ROOT CAUSE CANDIDATES</div>
+            <div class="ms-muted">No feature-level drift list found in payload.</div>
+          </div>
+        `;
+      } else {
+        const trs = rows
+          .map((r, i) => {
+            const sev = r.severity || (r.ks_statistic >= 0.35 ? "CRITICAL" : r.ks_statistic >= 0.2 ? "HIGH" : r.ks_statistic >= 0.1 ? "MEDIUM" : "LOW");
+            return `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${escapeHtml(String(r.feature).toUpperCase())}</td>
+                <td>${fmt(r.ks_statistic, 4)}</td>
+                <td>${isNum(r.p_value) ? r.p_value.toExponential(2) : "—"}</td>
+                <td class="${severityClass(sev)}">${escapeHtml(sev)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        rootCauseBox.innerHTML = `
+          <div class="ms-insight-wrap">
+            <div class="ms-insight-title">ROOT CAUSE CANDIDATES (TOP DRIFTED FEATURES)</div>
+            <div class="ms-rc-table-wrap">
+              <table class="ms-rc-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>FEATURE</th>
+                    <th>KS</th>
+                    <th>P_VALUE</th>
+                    <th>SEVERITY</th>
+                  </tr>
+                </thead>
+                <tbody>${trs}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
     }
   }
 
@@ -577,7 +994,9 @@
     if (!evalLatestBox) {
       evalLatestBox = document.createElement("div");
       evalLatestBox.id = "evalLatestBox";
-      if (latestMostDrifted && latestMostDrifted.parentNode) {
+      if (rootCauseBox && rootCauseBox.parentNode) {
+        rootCauseBox.insertAdjacentElement("afterend", evalLatestBox);
+      } else if (latestMostDrifted && latestMostDrifted.parentNode) {
         latestMostDrifted.insertAdjacentElement("afterend", evalLatestBox);
       } else {
         pages.dash?.appendChild(evalLatestBox);
@@ -922,11 +1341,20 @@
   // Render from API payload
   // -----------------------------
   function updateFromData(payload) {
-    state.latest = payload?.latest || {};
-    state.previous = payload?.previous || {};
+state.latest = isObj(payload?.latest) ? payload.latest : {};
+state.previous = isObj(payload?.previous) ? payload.previous : {};
+
+const liveConnected =
+  payload?.live_connected === true &&
+  Object.keys(state.latest).length > 0;
+
+setLivePill(liveConnected);
 
     state.latestMeta = extractRunMeta(state.latest);
     state.prevMeta = extractRunMeta(state.previous);
+
+    state.latestDecision = extractDecision(state.latest);
+    state.latestTopFeatures = extractTopDriftedFeatures(state.latest);
 
     if (runIdText) runIdText.textContent = state.latestMeta.run_id || "—";
     if (latestIdText) latestIdText.textContent = state.latestMeta.run_id || "—";
@@ -982,24 +1410,31 @@
       analysisJson.textContent = JSON.stringify({ latest: state.latest, previous: state.previous }, null, 2);
     }
 
-    // Alerts
+    // Alerts (now can include taxonomy/severity if present)
     if (alertBox) {
+      const decision = state.latestDecision;
+      const decisionPrefix = decision
+        ? `${decision.severity ? `${safeUpper(decision.severity)} • ` : ""}${decision.taxonomy ? `${safeUpper(decision.taxonomy)} • ` : ""}`
+        : "";
+
       if (latestStatus.includes("CRITICAL")) {
         const feature = lm.feat ? lm.feat.feature || lm.feat.name || "—" : "—";
         const ksFeat = lm.feat && isNum(lm.feat.ks) ? lm.feat.ks.toFixed(4) : "—";
-        alertBox.textContent = `CRITICAL: PREDICTION DRIFT HIGH (PRED_KS=${fmt(lm.pred_ks, 4)}). FEATURE=${String(
+        alertBox.textContent = `CRITICAL: ${decisionPrefix}PREDICTION DRIFT HIGH (PRED_KS=${fmt(lm.pred_ks, 4)}). FEATURE=${String(
           feature
         ).toLowerCase()} (KS=${ksFeat}). ΔENTROPY=${fmt(lm.delta_entropy, 4)}. INVESTIGATE IMMEDIATELY.`;
       } else if (latestStatus.includes("WARN")) {
-        alertBox.textContent = `WARNING: DRIFT DETECTED (PRED_KS=${fmt(lm.pred_ks, 4)}). Monitor closely.`;
+        alertBox.textContent = `WARNING: ${decisionPrefix}DRIFT DETECTED (PRED_KS=${fmt(lm.pred_ks, 4)}). Monitor closely.`;
       } else {
-        alertBox.textContent = "OK: No critical drift detected.";
+        alertBox.textContent = decisionPrefix ? `OK: ${decisionPrefix}No critical drift detected.` : "OK: No critical drift detected.";
       }
     }
 
     fillLedger(state.latest, state.previous);
+
     state.dirtyEval = true;
     state.dirtyCharts = true;
+    state.dirtyInsights = true;
 
     // If run changed, refresh history
     if (state.latestMeta.run_id && state.latestMeta.run_id !== state.lastFetchRunId) {
@@ -1064,7 +1499,7 @@
     } catch (e) {
       // Ignore aborts (normal during polling overlap)
       if (e?.name === "AbortError") return;
-
+      setLivePill(false);
       // Don't destroy dashboard state if one poll fails
       if (alertBox) {
         alertBox.textContent = "WARNING: /api/results fetch failed. Showing last known values.";
@@ -1153,6 +1588,11 @@
       state.dirtyHistory = false;
     }
 
+    if (state.dirtyInsights) {
+      renderInsights(state.latest);
+      state.dirtyInsights = false;
+    }
+
     if (state.dirtyEval) {
       renderEvaluation(state.latest, state.previous);
       state.dirtyEval = false;
@@ -1199,8 +1639,68 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   }
 
+  function buildRootCauseHtmlForReport(run) {
+    const rows = extractTopDriftedFeatures(run).slice(0, 10);
+    if (!rows.length) {
+      return `<div class="ms-muted">No feature-level drift list found in payload.</div>`;
+    }
+
+    const trs = rows
+      .map((r, i) => {
+        const sev = r.severity || (r.ks_statistic >= 0.35 ? "CRITICAL" : r.ks_statistic >= 0.2 ? "HIGH" : r.ks_statistic >= 0.1 ? "MEDIUM" : "LOW");
+        return `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(String(r.feature).toUpperCase())}</td>
+            <td>${fmt(r.ks_statistic, 4)}</td>
+            <td>${isNum(r.p_value) ? r.p_value.toExponential(2) : "—"}</td>
+            <td class="${severityClass(sev)}">${escapeHtml(sev)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    return `
+      <div class="ms-rc-table-wrap">
+        <table class="ms-rc-table">
+          <thead>
+            <tr><th>#</th><th>FEATURE</th><th>KS</th><th>P_VALUE</th><th>SEVERITY</th></tr>
+          </thead>
+          <tbody>${trs}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function buildDecisionHtmlForReport(run) {
+    const decision = extractDecision(run);
+    if (!decision) return `<div class="ms-muted">No composite decision block found in payload.</div>`;
+
+    const s = decision.signals || {};
+    const chips = [
+      decision.status ? `<span class="ms-chip ${severityClass(decision.status)}">STATUS: ${escapeHtml(decision.status)}</span>` : "",
+      decision.severity ? `<span class="ms-chip ${severityClass(decision.severity)}">SEVERITY: ${escapeHtml(decision.severity)}</span>` : "",
+      decision.taxonomy ? `<span class="ms-chip">TAXONOMY: ${escapeHtml(decision.taxonomy)}</span>` : "",
+    ].filter(Boolean).join("");
+
+    return `
+      <div class="ms-chip-row">${chips}</div>
+      <div class="ms-signal-grid">
+        <div class="ms-signal"><div class="k">AVG_FEATURE_KS</div><div class="v">${fmt(s.avg_feature_ks, 4)}</div></div>
+        <div class="ms-signal"><div class="k">MAX_FEATURE_KS</div><div class="v">${fmt(s.max_feature_ks, 4)}</div></div>
+        <div class="ms-signal"><div class="k">PREDICTION_KS</div><div class="v">${fmt(s.prediction_ks, 4)}</div></div>
+        <div class="ms-signal"><div class="k">COMPOSITE_SCORE</div><div class="v">${fmt(s.composite_score, 4)}</div></div>
+      </div>
+      <div class="ms-muted" style="margin-top:8px;">
+        ${s.max_feature_name ? `Top signal feature: ${escapeHtml(s.max_feature_name)} • ` : ""}
+        Feature count: ${isNum(s.feature_count) ? String(s.feature_count) : "—"}
+      </div>
+    `;
+  }
+
   function buildReportHtmlClient() {
     ensureEvalCss();
+    ensureInsightCss();
 
     const latestMeta = state.latestMeta;
     const prevMeta = state.prevMeta;
@@ -1253,6 +1753,9 @@
     const evalL = evalSectionHtml("EVALUATION METRICS — LATEST RUN", evL);
     const evalP = evalSectionHtml("EVALUATION METRICS — PREVIOUS RUN", evP);
 
+    const decisionHtml = buildDecisionHtmlForReport(state.latest);
+    const rootCauseHtml = buildRootCauseHtmlForReport(state.latest);
+
     return `<!doctype html>
 <html>
 <head>
@@ -1298,6 +1801,41 @@
     table.evaltable th, table.evaltable td{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.08); font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; text-align:left; }
     table.evaltable th{ opacity:0.85; letter-spacing:0.8px; }
     .hint{ font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; opacity:0.70; }
+
+    .ms-insight-wrap{
+      margin-top:12px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.06));
+      padding:12px;
+    }
+    .ms-insight-title{
+      font-family:ui-monospace, Menlo, Consolas, monospace;
+      font-weight:900;
+      letter-spacing:1px;
+      opacity:0.92;
+      margin-bottom:10px;
+    }
+    .ms-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    .ms-chip{
+      border:1px solid rgba(255,255,255,0.12);
+      padding:6px 8px;
+      font-family:ui-monospace, Menlo, Consolas, monospace;
+      font-size:12px;
+      line-height:1;
+      background:rgba(0,0,0,0.20);
+    }
+    .ms-chip.bad{ border-color:rgba(209,31,31,0.45); background:rgba(209,31,31,0.10); color:rgba(255,220,220,0.95); }
+    .ms-chip.warn{ border-color:rgba(255,170,0,0.45); background:rgba(255,170,0,0.08); }
+    .ms-chip.good{ border-color:rgba(80,200,120,0.40); background:rgba(80,200,120,0.06); }
+    .ms-signal-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .ms-signal{ border:1px solid rgba(255,255,255,0.08); padding:8px; background:rgba(0,0,0,0.14); }
+    .ms-signal .k{ font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; opacity:0.75; letter-spacing:.7px; }
+    .ms-signal .v{ font-family:ui-monospace, Menlo, Consolas, monospace; font-size:16px; font-weight:800; margin-top:3px; }
+    .ms-rc-table-wrap{ overflow:auto; border:1px solid rgba(255,255,255,0.08); }
+    table.ms-rc-table{ width:100%; border-collapse:collapse; min-width:600px; }
+    table.ms-rc-table th, table.ms-rc-table td{ padding:9px 10px; border-bottom:1px solid rgba(255,255,255,0.08); font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; text-align:left; }
+    table.ms-rc-table th{ opacity:0.85; letter-spacing:.8px; }
+    .ms-muted{ font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; opacity:0.68; }
   </style>
 </head>
 <body>
@@ -1326,6 +1864,17 @@
         <div class="kpi"><div class="k">Δ ENTROPY</div><div class="v">${fmt(lm.delta_entropy,4)}</div></div>
       </div>
       <div class="meta" style="margin-top:10px;"><b style="color:var(--text);">Most Drifted:</b> ${mostDriftedLine}</div>
+
+      <div class="ms-insight-wrap">
+        <div class="ms-insight-title">DECISION ENGINE</div>
+        ${decisionHtml}
+      </div>
+
+      <div class="ms-insight-wrap">
+        <div class="ms-insight-title">ROOT CAUSE CANDIDATES (TOP DRIFTED FEATURES)</div>
+        ${rootCauseHtml}
+      </div>
+
       <div style="margin-top:12px;">${evalL}</div>
     </div>
 
@@ -1470,24 +2019,44 @@
 
     exportBtn?.addEventListener("click", exportReport);
 
-    // Optional local clear (UI-only) if button exists and backend clear route is not implemented
-    clearHistoryBtn?.addEventListener("click", async () => {
-      // Try backend clear endpoint if you have one
-      try {
-        const res = await fetch(apiUrl(`/api/history/clear?t=${Date.now()}`), { method: "POST" });
-        if (res.ok) {
-          await fetchHistory();
-          return;
-        }
-      } catch {
-        // ignore and fallback
-      }
+    // History button behavior changed:
+    // DO NOT delete archived history. Just refresh the History table from server.
+clearHistoryBtn?.addEventListener("click", async () => {
+  const ok = window.confirm("Clear archived run history? (Latest run will be kept)");
+  if (!ok) return;
 
-      // UI fallback only (does NOT delete server data)
-      state.serverHistory = [];
-      state.dirtyHistory = true;
-      if (alertBox) alertBox.textContent = "INFO: History cleared in UI only (server clear endpoint not available).";
+  try {
+    const res = await fetch(apiUrl(`/api/history/clear?t=${Date.now()}`), {
+      method: "POST",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
     });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}${txt ? ` - ${txt.slice(0, 200)}` : ""}`);
+    }
+
+    const out = await res.json().catch(() => ({}));
+
+    // Refresh views after clear
+    await Promise.allSettled([fetchHistory(), fetchResults()]);
+    state.dirtyHistory = true;
+    state.dirtyEval = true;
+    state.dirtyInsights = true;
+    state.dirtyCharts = true;
+
+    if (alertBox) {
+      alertBox.textContent = out?.ok
+        ? "INFO: Archived history cleared."
+        : `WARNING: History cleared with issues (${(out?.errors || []).length || 0}).`;
+    }
+  } catch (e) {
+    if (alertBox) {
+      alertBox.textContent = `WARNING: Failed to clear history (${String(e)})`;
+    }
+  }
+});
 
     // initial state
     setZoom(state.zoom);
@@ -1514,7 +2083,7 @@
     setInterval(updateClock, 1000);
 
     // live pill blink
-    livePill?.classList.add("blink");
+    setLivePill(false);
 
     // resize => redraw charts once
     window.addEventListener("resize", () => {
