@@ -1,6 +1,7 @@
 # modelshift-lite/dashboard_web/app.py
 from __future__ import annotations
-
+import sys
+import subprocess
 import json
 import os
 import re
@@ -36,7 +37,7 @@ RESULTS_STALE_AFTER_SEC = 10
 
 # run_id safety (avoid path traversal)
 SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,80}$")
-
+SELFTEST_JSON = DATA_DIR / "selftest.json"
 # -------------------------------------------------------------------
 # App
 # -------------------------------------------------------------------
@@ -695,3 +696,33 @@ def api_report_run(
 
     no_cache_headers(resp)
     return resp
+@app.get("/api/selftest")
+def api_selftest(response: Response):
+    ensure_dirs()
+    data = read_json(SELFTEST_JSON)
+    no_cache_headers(response)
+    return data if data else {"ok": False, "message": "No self-test run yet."}
+
+
+@app.post("/api/selftest/run")
+def api_selftest_run(response: Response):
+    ensure_dirs()
+
+    # run from modelshift-lite/ so "modelshift" imports work
+    cwd = str(BASE_DIR.parent)  # .../modelshift-lite
+    cmd = [sys.executable, "-m", "modelshift.selftest", "--out", str(SELFTEST_JSON)]
+
+    try:
+        subprocess.run(cmd, cwd=cwd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        no_cache_headers(response)
+        return {
+            "ok": False,
+            "message": "Self-test failed to run",
+            "stderr": (e.stderr or "")[:2000],
+            "stdout": (e.stdout or "")[:2000],
+        }
+
+    data = read_json(SELFTEST_JSON)
+    no_cache_headers(response)
+    return data if data else {"ok": False, "message": "Self-test ran, but output file missing/invalid."}

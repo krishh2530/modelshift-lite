@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ModelShift-Lite • Self-Test Harness</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="shortcut icon" href="/static/favicon.ico">
+  <link rel="stylesheet" href="/static/selftest.css?v=2"/>
+</head>
+
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="caret">▸</span>
+      <span class="name">MODELSHIFT-LITE</span>
+      <span class="tag">SELF-TEST HARNESS</span>
+    </div>
+
+    <div class="right">
+      <div class="pill" id="statusPill">
+        <span class="dot"></span>
+        <span class="txt">READY</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="panelHead">
+        <div class="title">RUN CONTROLS</div>
+        <div class="actions">
+          <select id="testSelect" class="select">
+            <option value="suite">FULL SUITE (3 SCENARIOS)</option>
+            <option value="pipeline">PIPELINE HEALTH TEST</option>
+            <option value="prediction">PREDICTION DRIFT TEST</option>
+            <option value="feature">FEATURE DRIFT TEST</option>
+            <option value="concept">CONCEPT DRIFT TEST</option> 
+          </select>
+
+          <div class="seedBox">
+            <span class="seedLabel">SEED</span>
+            <input id="seedInput" class="seedInput" type="number" value="7" min="0" max="10000000"/>
+          </div>
+
+          <button class="btn primary" id="runBtn">RUN TEST</button>
+        </div>
+      </div>
+
+      <div class="hint">
+        This harness generates <b>synthetic drift</b>, then validates that ModelShift-Lite computes:
+        <b>Feature KS</b>, <b>Prediction KS</b>, and <b>Health Score</b> correctly — with animated visuals.
+      </div>
+    </section>
+
+    <section class="grid2">
+      <section class="panel">
+        <div class="panelHead">
+          <div class="title">ANIMATED KPIs</div>
+          <div class="sub" id="metaLine">—</div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi">
+            <div class="k">PRED_KS (CLEAN)</div>
+            <div class="v" id="kPredClean">—</div>
+          </div>
+          <div class="kpi warn">
+            <div class="k">PRED_KS (DRIFTED)</div>
+            <div class="v" id="kPredDrift">—</div>
+          </div>
+          <div class="kpi">
+            <div class="k">HEALTH (CLEAN)</div>
+            <div class="v" id="kHealthClean">—</div>
+          </div>
+          <div class="kpi warn">
+            <div class="k">HEALTH (DRIFTED)</div>
+            <div class="v" id="kHealthDrift">—</div>
+          </div>
+        </div>
+
+        <div class="checks" id="checksBox"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelHead">
+          <div class="title">PLAYABLE ANIMATION</div>
+          <div class="actions">
+            <button class="btn" id="playBtn">PLAY</button>
+            <button class="btn" id="resetBtn">RESET</button>
+          </div>
+        </div>
+
+        <div class="scrubRow">
+          <div class="scrubLabel">DRIFT MIX</div>
+          <input id="mixSlider" type="range" min="0" max="100" value="0"/>
+          <div class="scrubVal" id="mixVal">0%</div>
+        </div>
+
+        <div class="chartCard">
+          <div class="chartTitle">PREDICTION DISTRIBUTION (HISTOGRAM)</div>
+          <canvas id="histCanvas"></canvas>
+          <div class="chartLegend">
+            <span class="lg base"></span> Baseline
+            <span class="lg clean"></span> Clean
+            <span class="lg drift"></span> Drifted
+          </div>
+        </div>
+
+        <div class="chartRow">
+          <div class="chartMini">
+            <div class="chartTitle">KS GAUGE</div>
+            <canvas id="ksGauge"></canvas>
+          </div>
+          <div class="chartMini">
+            <div class="chartTitle">HEALTH GAUGE</div>
+            <canvas id="healthGauge"></canvas>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="panelHead">
+        <div class="title">TOP DRIFTED FEATURES</div>
+        <div class="sub">Feature-level KS bars (animated)</div>
+      </div>
+      <canvas id="featCanvas"></canvas>
+    </section>
+
+    <section class="panel">
+      <div class="panelHead">
+        <div class="title">RAW JSON (PROOF)</div>
+        <div class="sub">This is what the visuals are driven by</div>
+      </div>
+      <pre class="code" id="jsonBox">Click “RUN TEST”.</pre>
+    </section>
+  </main>
+
+  <script defer src="/static/selftest.js?v=2"></script>
+</body>
+</html>

@@ -233,7 +233,8 @@
   const analysisJson = el("analysisJson");
   const alertBox = el("alertBox");
   const historyBody = el("historyBody");
-
+  const selfTestRunBtn = el("selfTestRunBtn");
+  const selfTestJson = el("selfTestJson");
   // Optional eval containers (injected if missing)
   let evalLatestBox = el("evalLatestBox");
   let evalPrevBox = el("evalPrevBox");
@@ -1977,6 +1978,8 @@ setLivePill(liveConnected);
     // nav clicks
     document.querySelectorAll(".navbtn").forEach((b) => {
       b.addEventListener("click", () => setPage(b.dataset.page));
+    selfTestRunBtn?.addEventListener("click", () => fetchSelfTest(true));
+    fetchSelfTest(false);
     });
 
     // controls
@@ -2113,3 +2116,22 @@ clearHistoryBtn?.addEventListener("click", async () => {
 
   document.addEventListener("DOMContentLoaded", init);
 })();
+function renderSelfTest(data) {
+  if (!selfTestJson) return;
+  selfTestJson.textContent = JSON.stringify(data || {}, null, 2);
+}
+
+async function fetchSelfTest(run = false) {
+  try {
+    const url = run ? apiUrl(`/api/selftest/run?t=${Date.now()}`) : apiUrl(`/api/selftest?t=${Date.now()}`);
+    const res = await fetch(url, { method: run ? "POST" : "GET", cache: "no-store" });
+    const data = await res.json();
+    renderSelfTest(data);
+
+    if (alertBox && run) {
+      alertBox.textContent = data?.ok ? "INFO: Self-test passed ✅" : "WARNING: Self-test failed ❌";
+    }
+  } catch (e) {
+    renderSelfTest({ ok: false, message: `Self-test fetch failed: ${String(e)}` });
+  }
+}
