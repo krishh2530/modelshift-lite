@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import uuid
+import requests
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -15,7 +18,26 @@ from modelshift.drift.severity import (
     summarize_feature_drift,
 )
 
+# -------------------------------------------------------------------
+# Phase 2: Cloud SDK Configuration
+# -------------------------------------------------------------------
+_CLOUD_CONFIG = {
+    "api_key": None,
+    "endpoint": "http://127.0.0.1:8000/api/v1/track"
+}
 
+def init(api_key: str, endpoint: str = "http://127.0.0.1:8000/api/v1/track"):
+    """
+    Initialize the ModelShift-Lite SDK with your cloud API Key.
+    This links your local ML models to your cloud dashboard.
+    """
+    _CLOUD_CONFIG["api_key"] = api_key
+    _CLOUD_CONFIG["endpoint"] = endpoint
+    print(f"[✓] ModelShift SDK Authenticated. Cloud sync enabled.")
+
+# -------------------------------------------------------------------
+# Core Engine
+# -------------------------------------------------------------------
 class ModelMonitor:
     """
     Main interface for ModelShift-Lite monitoring.
@@ -92,19 +114,11 @@ class ModelMonitor:
         return self.feature_drift_results
 
     def get_latest_feature_drift(self) -> dict:
-        """
-        Return last computed feature drift results.
-        """
         if self.feature_drift_results is None:
             raise RuntimeError("No feature drift computed yet.")
         return self.feature_drift_results
 
     def get_feature_severity(self) -> dict:
-        """
-        Return severity classification per feature.
-        Format:
-          {feature_name: "LOW"|"MEDIUM"|"HIGH"|"CRITICAL"}
-        """
         if self.feature_drift_results is None:
             raise RuntimeError("No feature drift computed yet.")
 
@@ -117,29 +131,13 @@ class ModelMonitor:
         return severity
 
     def get_model_health_score(self) -> float:
-        """
-        Return overall model health score derived from feature drift.
-        """
         if self.feature_drift_results is None:
             raise RuntimeError("No feature drift computed yet.")
-
         return compute_health_score(self.feature_drift_results)
 
     def get_top_drifted_features(self, k: int = 5) -> List[Dict[str, Any]]:
-        """
-        Return top-k drifted features sorted by KS descending.
-
-        Output items:
-        {
-          "feature": "...",
-          "ks_statistic": ...,
-          "p_value": ...,
-          "severity": ...
-        }
-        """
         if self.feature_drift_results is None:
             raise RuntimeError("No feature drift computed yet.")
-
         if not isinstance(k, int) or k <= 0:
             raise ValueError("k must be a positive integer")
 
@@ -160,9 +158,6 @@ class ModelMonitor:
         return rows[:k]
 
     def get_most_drifted_feature(self) -> Optional[Dict[str, Any]]:
-        """
-        Return the single most drifted feature, or None if unavailable.
-        """
         top = self.get_top_drifted_features(k=1)
         return top[0] if top else None
 
@@ -170,26 +165,14 @@ class ModelMonitor:
     # Prediction Drift
     # -----------------------
     def set_baseline_predictions(self, predictions):
-        """
-        Store baseline prediction probabilities.
-        Accepts numpy array or array-like.
-        """
         self.baseline_predictions = _prepare_prediction_array(predictions, "baseline")
 
     def update_predictions(self, live_predictions):
-        """
-        Update live prediction probabilities.
-        Accepts numpy array or array-like.
-        """
         self.live_predictions = _prepare_prediction_array(live_predictions, "live")
 
     def compute_prediction_drift(self) -> dict:
-        """
-        Compute prediction behavior drift.
-        """
         if self.baseline_predictions is None:
             raise RuntimeError("Baseline predictions not set.")
-
         if self.live_predictions is None:
             raise RuntimeError("Live predictions not set.")
 
@@ -200,34 +183,14 @@ class ModelMonitor:
         return self.prediction_drift_results
 
     def get_latest_prediction_drift(self) -> dict:
-        """
-        Return last computed prediction drift results.
-        """
         if self.prediction_drift_results is None:
             raise RuntimeError("No prediction drift computed yet.")
         return self.prediction_drift_results
 
     # -----------------------
-    # Composite Summary (New)
+    # Composite Summary
     # -----------------------
     def evaluate_health(self) -> Dict[str, Any]:
-        """
-        Build a composite monitoring summary using feature + prediction drift.
-
-        Returns:
-        {
-          "status": ...,
-          "severity": ...,
-          "taxonomy": ...,
-          "health_score": ...,
-          "feature_summary": ...,
-          "prediction_drift": ...,
-          "top_drifted_features": [...],
-          "most_drifted_feature": {...},
-          "signals": {...},
-          "thresholds": {...}
-        }
-        """
         if self.feature_drift_results is None:
             raise RuntimeError("No feature drift computed yet.")
         if self.prediction_drift_results is None:
@@ -247,22 +210,15 @@ class ModelMonitor:
             "severity": decision.get("severity"),
             "taxonomy": decision.get("taxonomy"),
             "health_score": decision.get("health_score"),
-
             "feature_summary": feature_summary,
             "prediction_drift": self.prediction_drift_results,
-
             "top_drifted_features": top_features,
             "most_drifted_feature": most_feature,
-
             "signals": decision.get("signals", {}),
             "thresholds": decision.get("thresholds", {}),
         }
 
     def build_snapshot(self) -> Dict[str, Any]:
-        """
-        Convenience method to produce a normalized snapshot payload of the monitor state.
-        Useful for saving/exporting JSON for dashboards.
-        """
         snapshot: Dict[str, Any] = {
             "feature_drift": self.feature_drift_results,
             "prediction_drift": self.prediction_drift_results,
@@ -278,6 +234,60 @@ class ModelMonitor:
             snapshot["decision"] = self.evaluate_health()
 
         return snapshot
+
+    # -----------------------
+    # Phase 2: Cloud Sync Method
+    # -----------------------
+    def push(self) -> Optional[Dict[str, Any]]:
+        """
+        Takes the local drift calculation and beams it securely to your FastAPI dashboard.
+        """
+        if not _CLOUD_CONFIG["api_key"]:
+            print("[!] API Key Missing. Please add 'modelshift.init(api_key=\"YOUR_KEY\")' at the top of your script.")
+            return None
+            
+        snapshot = self.build_snapshot()
+        decision = snapshot.get("decision", {})
+        
+        mdf = snapshot.get("most_drifted_feature") or {}
+        pred_drift = snapshot.get("prediction_drift") or {}
+        
+        # Package the data exactly how your dashboard expects it
+        run_id = f"run_{uuid.uuid4().hex[:8]}"
+        payload = {
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "status": decision.get("status", "UNKNOWN"),
+            "window_size": len(self.live_data) if self.live_data is not None else 0,
+            
+            # Dashboard Graph Metrics
+            "clean_health": 100.0,
+            "drifted_health": decision.get("health_score", 0.0),
+            "drifted_pred_ks": pred_drift.get("ks_statistic", 0.0),
+            "drifted_entropy_change": pred_drift.get("delta_entropy", 0.0),
+            "drifted_last_window_feature": mdf.get("feature"),
+            "drifted_last_window_ks": mdf.get("ks_statistic"),
+            
+            "evaluation": snapshot
+        }
+
+        # The Security Checkpoint
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": _CLOUD_CONFIG["api_key"]
+        }
+        
+        try:
+            print(f"[~] Beaming data to {_CLOUD_CONFIG['endpoint']}...")
+            response = requests.post(_CLOUD_CONFIG["endpoint"], json=payload, headers=headers)
+            response.raise_for_status()
+            print(f"[✓] Successfully synced run '{run_id}' to ModelShift Cloud.")
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"[!] ModelShift Cloud Sync Failed: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"[!] Server Context: {e.response.text}")
+            return None
 
 
 # -----------------------

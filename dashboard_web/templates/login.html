@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#d11f1f",
+              "surface": "#121316",
+              "on-surface": "#ffffff", /* Pure White */
+              "outline-variant": "#4a4d52", /* Brighter borders */
+            },
+            fontFamily: { "body": ["Space Grotesk"] },
+          },
+        },
+      }
+    </script>
+    <style>
+        .chamfer-card { clip-path: polygon(20px 0%, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0% 20px); }
+        .chamfer-btn { clip-path: polygon(10px 0%, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0% 10px); }
+        .crt-overlay {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px; pointer-events: none;
+        }
+        .tactical-grid {
+            background-image: linear-gradient(to right, rgba(209, 31, 31, 0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(209, 31, 31, 0.07) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        body { min-height: 100vh; }
+        .typewriter-text {
+            display: inline-block; overflow: hidden; white-space: nowrap; border-right: 4px solid #d11f1f;
+            animation: typing 4s steps(20, end) infinite alternate, blink-caret .75s step-end infinite; max-width: fit-content;
+        }
+        @keyframes typing { 0%, 10% { max-width: 0; } 70%, 100% { max-width: 100%; } }
+        @keyframes blink-caret { from, to { border-color: transparent; } 50% { border-color: #d11f1f; } }
+    </style>
+</head>
+<body class="bg-[#0b0c0d] font-body text-white min-h-screen overflow-hidden">
+    <div class="fixed inset-0 tactical-grid z-0"></div>
+    <div class="fixed inset-0 crt-overlay z-50"></div>
+    
+    <header class="fixed top-0 w-full h-16 bg-[#121316] flex justify-between items-center px-6 z-40 border-b border-primary/40">
+        <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-primary">terminal</span>
+            <h1 class="text-xl font-black tracking-[0.25em] text-primary drop-shadow-[0_0_10px_rgba(209,31,31,0.8)] uppercase">MODELSHIFT</h1>
+        </div>
+        <div class="font-mono tracking-[0.25em] uppercase text-sm text-primary font-bold">/// SECURE_TERMINAL</div>
+    </header>
+
+    <main class="relative z-10 flex items-center justify-center min-h-screen p-6">
+        <div class="w-full max-w-md bg-[#0f1112]/90 backdrop-blur-md chamfer-card p-1 shadow-2xl border border-primary/50">
+            <div class="p-8 space-y-8 relative overflow-hidden">
+                <div class="space-y-2">
+                    <h2 class="text-2xl font-bold tracking-[0.2em] uppercase text-primary typewriter-text drop-shadow-md">AUTH_INITIALIZE</h2>
+                    <p class="text-xs font-mono tracking-widest text-gray-300 font-bold">00-42 // ENCRYPTED_HANDSHAKE</p>
+                </div>
+                <form class="space-y-10">
+                    <div class="relative group">
+                        <span class="absolute -top-5 left-0 text-xs font-mono tracking-[0.2em] text-primary font-bold uppercase">OPERATOR_ID (EMAIL)</span>
+                        <input class="w-full bg-transparent border-t-0 border-l-0 border-r-0 border-b-2 border-outline-variant focus:border-primary focus:ring-0 text-white font-mono py-2 text-lg font-bold placeholder:text-gray-500 uppercase tracking-widest focus:shadow-[0_4px_12px_-4px_rgba(209,31,31,0.8)]" placeholder="USER@DOMAIN.COM" required type="email"/>
+                    </div>
+                    <div class="relative group">
+                        <span class="absolute -top-5 left-0 text-xs font-mono tracking-[0.2em] text-primary font-bold uppercase">SECURITY_KEY (PASSWORD)</span>
+                        <input class="w-full bg-transparent border-t-0 border-l-0 border-r-0 border-b-2 border-outline-variant focus:border-primary focus:ring-0 text-white font-mono py-2 text-lg font-bold placeholder:text-gray-500 tracking-[0.5em] focus:shadow-[0_4px_12px_-4px_rgba(209,31,31,0.8)]" placeholder="••••••••" required type="password"/>
+                    </div>
+                    <button class="group relative w-full h-14 bg-[#1d2023] border-2 border-primary chamfer-btn flex items-center justify-center transition-all hover:bg-primary hover:shadow-[0_0_20px_rgba(209,31,31,0.6)]" type="submit">
+                        <span class="font-mono text-sm tracking-[0.3em] font-bold text-white transition-all uppercase">INITIALIZE SESSION</span>
+                    </button>
+                    <div class="mt-4 text-center">
+                        <a class="text-xs font-mono text-gray-300 hover:text-white font-bold tracking-widest" href="/signup">> NO_API_KEY? [ REGISTER ]</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+    
+    <footer class="fixed bottom-0 left-0 w-full z-50 flex justify-between px-6 items-center h-8 bg-[#121316] border-t border-primary/40">
+        <div class="font-mono tracking-widest text-xs uppercase text-primary font-bold">[SYS.OP.AUTH_REQUIRED]</div>
+        <div class="flex gap-6 font-mono tracking-widest text-xs uppercase text-gray-300 font-bold">
+            <span>[LAT: 45.92 // LON: -12.4]</span><span>VER_00.42</span>
+        </div>
+    </footer>
+
+    <script>
+        document.querySelector('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const inputs = document.querySelectorAll('input');
+            const email = inputs[0].value;
+            const password = inputs[1].value;
+            const btn = document.querySelector('button span');
+
+            btn.innerText = "AUTHENTICATING...";
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, password: password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    localStorage.setItem("modelshift_api_key", data.api_key);
+                    localStorage.setItem("modelshift_email", data.email);
+                    window.location.href = "/";
+                } else {
+                    alert("ACCESS DENIED: " + data.detail);
+                    btn.innerText = "INITIALIZE SESSION";
+                }
+            } catch (err) {
+                alert("NETWORK UPLINK FAILED.");
+                btn.innerText = "INITIALIZE SESSION";
+            }
+        });
+    </script>
+</body>
+</html>

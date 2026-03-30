@@ -18,3 +18,13 @@ data/live/*
 
 # Streamlit
 .streamlit/
+# PyPI Build Artifacts
+dist/
+build/
+*.egg-info/
+
+# Local Dashboard Data & Databases
+dashboard_web/data/*.json
+dashboard_web/data/*.html
+dashboard_web/data/*.touch
+dashboard_web/data/*.db

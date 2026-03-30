@@ -1342,6 +1342,21 @@ function setLivePill(isLive) {
   // Render from API payload
   // -----------------------------
   function updateFromData(payload) {
+// --- SMART VIEW DATASET BUTTON ---
+    const viewDatasetBtn = document.getElementById("viewDatasetBtn");
+    const statusUpper = String(state.latestMeta.status || "").toUpperCase();
+    
+    // Only show if the status is a warning or critical drift
+    const hasDrift = statusUpper.includes("DRIFT") || statusUpper.includes("WARN") || statusUpper.includes("CRITICAL");
+
+    if (viewDatasetBtn && state.latestMeta.run_id && state.latestMeta.run_id !== "—" && hasDrift) {
+      viewDatasetBtn.style.display = "inline-block";
+      viewDatasetBtn.onclick = () => {
+        window.open(apiUrl(`/dataset/${state.latestMeta.run_id}`), "_blank");
+      };
+    } else if (viewDatasetBtn) {
+      viewDatasetBtn.style.display = "none";
+    }
 state.latest = isObj(payload?.latest) ? payload.latest : {};
 state.previous = isObj(payload?.previous) ? payload.previous : {};
 

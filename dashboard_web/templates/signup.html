@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>MODELSHIFT // AUTH_REQUIRED</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700;900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <style>
+        body { font-family: 'Space Grotesk', monospace; background-color: #121316; overflow: hidden; }
+        .crt-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 19, 22, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(209, 31, 31, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 2px, 3px 100%; pointer-events: none; z-index: 50;
+        }
+        .tactical-grid {
+            background-image: 
+                linear-gradient(to right, rgba(209, 31, 31, 0.07) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(209, 31, 31, 0.07) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .chamfer-card {
+            clip-path: polygon(20px 0%, calc(100% - 20px) 0%, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0% calc(100% - 20px), 0% 20px);
+        }
+        .chamfer-button { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+        @keyframes flicker {
+            0% { opacity: 0.9; } 5% { opacity: 0.7; } 10% { opacity: 0.9; } 15% { opacity: 1; }
+            80% { opacity: 1; } 85% { opacity: 0.8; } 90% { opacity: 1; } 100% { opacity: 0.95; }
+        }
+        .flicker { animation: flicker 4s infinite; }
+        .neon-input:focus { box-shadow: 0 10px 15px -10px rgba(209, 31, 31, 0.5); border-color: #d11f1f; }
+        .barcode-chunk { width: 2px; background-color: #b2b5bd; margin-right: 1px; }
+
+        /* Terminal Typing Effect */
+        .typewriter-text {
+            display: inline-block;
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 4px solid #d11f1f;
+            animation: 
+                typing 4s steps(20, end) infinite alternate,
+                blink-caret .75s step-end infinite;
+            max-width: fit-content;
+        }
+        @keyframes typing {
+            0%, 10% { max-width: 0; }
+            70%, 100% { max-width: 100%; }
+        }
+        @keyframes blink-caret {
+            from, to { border-color: transparent; }
+            50% { border-color: #d11f1f; }
+        }
+    </style>
+    <script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary-container": "#d11f1f",
+                "on-secondary-container": "#b2b5bd",
+                "primary-fixed": "#d11f1f",
+                "on-surface": "#e3e2e5",
+                "secondary-container": "#43474e",
+                "on-secondary-fixed-variant": "#43474e",
+                "on-secondary-fixed": "#181c22",
+                "surface-container-highest": "#343538",
+                "on-tertiary-container": "#002f32",
+                "surface-container-lowest": "#0d0e11",
+                "on-secondary": "#2d3137",
+                "surface-container-high": "#292a2d",
+                "on-surface-variant": "#e8bcba",
+                "surface-container-low": "#1a1c1e",
+                "on-primary-fixed-variant": "#93001a",
+                "inverse-primary": "#bf0026",
+                "secondary-fixed": "#dfe2eb",
+                "error": "#d11f1f",
+                "on-background": "#e3e2e5",
+                "outline-variant": "#5e3f3d",
+                "on-primary": "#680010",
+                "on-error-container": "#ffdad6",
+                "surface-tint": "#d11f1f",
+                "on-primary-fixed": "#410006",
+                "on-tertiary-fixed-variant": "#004f53",
+                "tertiary-fixed": "#89f3f9",
+                "surface-dim": "#121316",
+                "on-tertiary-fixed": "#002021",
+                "on-error": "#690005",
+                "tertiary-container": "#269fa6",
+                "tertiary-fixed-dim": "#6bd7dd",
+                "tertiary": "#6bd7dd",
+                "primary-fixed-dim": "#d11f1f",
+                "surface-container": "#1e2022",
+                "primary": "#d11f1f",
+                "secondary-fixed-dim": "#c3c6ce",
+                "on-tertiary": "#003739",
+                "surface-variant": "#343538",
+                "secondary": "#c3c6ce",
+                "outline": "#af8785",
+                "surface": "#121316",
+                "inverse-on-surface": "#2f3033",
+                "background": "#121316",
+                "on-primary-container": "#ffffff",
+                "inverse-surface": "#e3e2e5",
+                "error-container": "#93000a",
+                "surface-bright": "#38393c"
+              },
+              fontFamily: { "headline": ["Space Grotesk"], "body": ["Space Grotesk"], "label": ["Space Grotesk"] },
+              borderRadius: {"DEFAULT": "0rem", "lg": "0rem", "xl": "0rem", "full": "9999px"},
+            },
+          },
+        }
+      </script>
+</head>
+<body class="bg-surface text-on-surface min-h-screen relative flex flex-col items-center justify-center p-4">
+    <div class="crt-overlay"></div>
+    <div class="tactical-grid absolute inset-0 opacity-20 pointer-events-none"></div>
+    <div class="fixed top-8 left-8 flex flex-col gap-1 opacity-40 pointer-events-none">
+        <div class="text-[10px] font-mono tracking-widest text-primary flicker">SYS_STATUS: ACTIVE</div>
+        <div class="text-[10px] font-mono tracking-widest text-on-secondary-container">BUFFER_LOAD: 88.42%</div>
+        <div class="w-32 h-1 bg-secondary-container mt-2">
+            <div class="w-2/3 h-full bg-primary flicker"></div>
+        </div>
+    </div>
+    <div class="fixed top-8 right-8 opacity-40 text-right pointer-events-none">
+        <div class="text-[10px] font-mono tracking-widest text-primary">SCANNING_FREQUENCIES...</div>
+        <div class="text-xs font-mono text-on-secondary-container mt-1">COORD_ID: 982-AX-00</div>
+    </div>
+    <div class="fixed inset-0 flex items-center justify-center pointer-events-none select-none">
+        <span class="text-[25vw] font-black text-primary opacity-[0.03] tracking-tighter">AUTH</span>
+    </div>
+    <header class="fixed top-0 w-full h-16 bg-[#121316] z-50 flex justify-between items-center px-6 shadow-[inset_0_-1px_0_0_rgba(209,31,31,0.25)]">
+        <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-primary text-xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
+            <span class="font-mono tracking-[0.25em] uppercase text-sm font-black text-[#d11f1f] drop-shadow-[0_0_10px_rgba(209,31,31,0.5)]">MODELSHIFT</span>
+        </div>
+        <div class="hidden md:flex gap-8">
+            <span class="font-mono tracking-[0.25em] uppercase text-sm text-[#d11f1f] opacity-100 hover:opacity-80 transition-opacity duration-100 cursor-pointer">SECURE_TERMINAL</span>
+        </div>
+        <div class="flex items-center">
+            <span class="font-mono tracking-[0.25em] text-xs text-on-secondary-container opacity-60">VER_0.42_STABLE</span>
+        </div>
+    </header>
+    <main class="relative z-10 w-full max-w-xl">
+        <div class="absolute -top-6 -left-6 w-12 h-12 border-t-2 border-l-2 border-primary opacity-40"></div>
+        <div class="absolute -top-6 -right-6 w-12 h-12 border-t-2 border-r-2 border-primary opacity-40"></div>
+        <div class="absolute -bottom-6 -left-6 w-12 h-12 border-b-2 border-l-2 border-primary opacity-40"></div>
+        <div class="absolute -bottom-6 -right-6 w-12 h-12 border-b-2 border-r-2 border-primary opacity-40"></div>
+        <div class="chamfer-card bg-surface-container-low/60 backdrop-blur-xl border border-primary/20 p-12 shadow-2xl relative overflow-hidden group">
+            <div class="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-primary/60 to-transparent"></div>
+            <div class="flex justify-between items-start mb-12">
+                <div>
+                    <h1 class="text-2xl font-black tracking-[0.3em] text-on-surface uppercase mb-1 typewriter-text">NEW_OPERATOR_REQ</h1>
+                    <p class="text-[10px] font-mono tracking-[0.2em] text-primary flicker">00-42 // INITIATE_HANDSHAKE</p>
+                </div>
+                <div class="text-right">
+                    <span class="text-[10px] font-mono tracking-widest text-on-secondary-container opacity-50 uppercase">Origin</span>
+                    <div class="text-[10px] font-mono text-primary">LAT: 45.92 // LON: -12.4</div>
+                </div>
+            </div>
+            <form class="space-y-10">
+                <div class="relative group/field">
+                    <label class="block text-[10px] font-mono tracking-[0.2em] text-on-secondary-container uppercase mb-2">OPERATOR_ID</label>
+                    <div class="relative">
+                        <input class="w-full bg-transparent border-0 border-b-2 border-secondary-container text-primary font-mono tracking-widest py-3 focus:ring-0 focus:outline-none neon-input transition-all duration-300 placeholder:text-on-secondary-container/30 uppercase" placeholder="ENTER_IDENTIFIER" type="text"/>
+                        <span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-on-secondary-container/20 text-sm">add</span>
+                    </div>
+                </div>
+                <div class="relative group/field">
+                    <label class="block text-[10px] font-mono tracking-[0.2em] text-on-secondary-container uppercase mb-2">SECURITY_KEY</label>
+                    <div class="relative">
+                        <input class="w-full bg-transparent border-0 border-b-2 border-secondary-container text-primary font-mono tracking-widest py-3 focus:ring-0 focus:outline-none neon-input transition-all duration-300 placeholder:text-on-secondary-container/30" placeholder="********" type="password"/>
+                        <span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-on-secondary-container/20 text-sm">add</span>
+                    </div>
+                </div>
+                <div class="relative group/field">
+                    <label class="block text-[10px] font-mono tracking-[0.2em] text-on-secondary-container uppercase mb-2">CONFIRM_KEY</label>
+                    <div class="relative">
+                        <input class="w-full bg-transparent border-0 border-b-2 border-secondary-container text-primary font-mono tracking-widest py-3 focus:ring-0 focus:outline-none neon-input transition-all duration-300 placeholder:text-on-secondary-container/30" placeholder="********" type="password"/>
+                        <span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-on-secondary-container/20 text-sm">add</span>
+                    </div>
+                </div>
+                <div class="pt-6">
+                    <button class="chamfer-button w-full bg-primary text-on-primary-container font-black py-5 tracking-[0.4em] text-sm uppercase transition-all duration-300 hover:bg-primary-container/90 hover:scale-[0.99] active:scale-[0.97] hover:shadow-[0_0_20px_rgba(209,31,31,0.5)] flex items-center justify-center gap-3">
+                        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">key</span>
+                        GENERATE API KEY
+                    </button>
+                    <div class="mt-4 flex justify-between items-center px-1">
+                        <a class="text-[10px] font-mono text-on-secondary-container hover:text-primary transition-colors tracking-widest" href="/login">EXISTING_UPLINK?</a>
+                        <div class="flex gap-1 opacity-30">
+                            <div class="w-1 h-1 bg-on-secondary-container"></div>
+                            <div class="w-1 h-1 bg-on-secondary-container"></div>
+                            <div class="w-4 h-1 bg-primary"></div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+            <div class="mt-12 pt-8 border-t border-primary/10 flex justify-between items-end">
+                <div class="flex items-end h-8">
+                    <div class="barcode-chunk h-full"></div>
+                    <div class="barcode-chunk h-2/3"></div>
+                    <div class="barcode-chunk h-full"></div>
+                    <div class="barcode-chunk h-1/2"></div>
+                    <div class="barcode-chunk h-3/4"></div>
+                    <div class="barcode-chunk h-full w-4 bg-primary/30"></div>
+                </div>
+                <div class="text-[9px] font-mono text-on-secondary-container opacity-40 text-right leading-tight">
+                    ENCRYPTION_MODE: AES-256-GCM<br/>PROTOCOL_V: 12.0.4<br/>SESSION_ID: 0x99F...AD2
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer class="fixed bottom-0 left-0 w-full h-8 z-50 flex justify-between px-6 items-center opacity-80 bg-[#0d0e11] shadow-[inset_0_1px_0_0_rgba(209,31,31,0.2)]">
+        <div class="font-mono tracking-[0.2em] text-[10px] uppercase text-[#d11f1f]">[SYS.OP.AUTH_REQUIRED]</div>
+        <div class="flex gap-6 font-mono tracking-[0.2em] text-[10px] uppercase text-[#d11f1f]">
+            <span>[LAT: 45.92 // LON: -12.4]</span>
+            <span class="text-[#43474e]">VER_00.42</span>
+        </div>
+    </footer>
+    <div class="fixed top-2 left-2 w-4 h-4 border-t border-l border-on-secondary-container opacity-20"></div>
+    <div class="fixed top-2 right-2 w-4 h-4 border-t border-r border-on-secondary-container opacity-20"></div>
+    <div class="fixed bottom-10 left-2 w-4 h-4 border-b border-l border-on-secondary-container opacity-20"></div>
+    <div class="fixed bottom-10 right-2 w-4 h-4 border-b border-r border-on-secondary-container opacity-20"></div>
+<script>
+        document.querySelector('form').addEventListener('submit', async (e) => {
+            e.preventDefault(); // Stop the page from reloading
+            
+            const inputs = document.querySelectorAll('input');
+            const email = inputs[0].value;
+            const password = inputs[1].value;
+            const confirmPassword = inputs[2].value;
+            const btn = document.querySelector('button');
+
+            if (password !== confirmPassword) {
+                alert("SECURITY KEYS DO NOT MATCH");
+                return;
+            }
+
+            btn.innerText = "PROCESSING...";
+
+            try {
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, password: password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Save the API key to the browser's local storage
+                    localStorage.setItem("modelshift_api_key", data.api_key);
+                    localStorage.setItem("modelshift_email", data.email);
+                    alert("API KEY GENERATED: " + data.api_key);
+                    window.location.href = "/"; // Redirect to the main dashboard
+                } else {
+                    alert("ERROR: " + data.detail);
+                    btn.innerText = "GENERATE API KEY";
+                }
+            } catch (err) {
+                alert("NETWORK UPLINK FAILED.");
+                btn.innerText = "GENERATE API KEY";
+            }
+        });
+    </script>
+</body>
+</html>
