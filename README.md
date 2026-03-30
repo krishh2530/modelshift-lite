@@ -128,30 +128,3 @@ uvicorn dashboard_web.app:app --reload
 Navigate to http://127.0.0.1:8000 in your browser.
 
 Create an account, generate an API Key, and start tracking your models!
-
-graph TD
-    subgraph Client["Client Environment"]
-        A[Live ML Pipeline] -->|1. Feed Data| B(ModelShift SDK)
-        B -->|2. Compute Drift| B
-        B -->|3. Transmit| C[API Transmitter]
-    end
-
-    subgraph Cloud["ModelShift Cloud Backend"]
-        C -->|4. POST JSON| D{FastAPI Router}
-        D -->|5. Validate Key| E[(SQLite Vault)]
-        D -->|6. Store Data| F[Time-Series Storage]
-    end
-
-    subgraph Output["Outputs & Alerts"]
-        F -->|7. Visualize| G[Web Dashboard]
-        D -->|8. If Critical| H[Background Worker]
-        H -->|9. Send Alert| I[HTML Email Notification]
-    end
-
-    classDef sdk fill:#1d2023,stroke:#d11f1f,stroke-width:2px,color:#fff;
-    classDef cloud fill:#0f1112,stroke:#4a4d52,stroke-width:2px,color:#fff;
-    classDef output fill:#2a2d30,stroke:#d11f1f,stroke-width:2px,color:#fff;
-
-    class A,B,C sdk;
-    class D,E,F cloud;
-    class G,H,I output;
