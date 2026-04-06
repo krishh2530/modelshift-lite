@@ -7,6 +7,7 @@ import os
 import re
 import time
 import math
+#from pydantic import BaseModel
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,7 +24,7 @@ import numpy as np
 
 # --- Phase 1: Security & Database Imports ---
 from pydantic import BaseModel
-import bcrypt
+#import bcrypt
 from sqlalchemy.orm import Session
 from dashboard_web.database import get_db, User, generate_api_key
 from dashboard_web.email_alert import send_critical_alert
@@ -642,11 +643,33 @@ def get_current_user(api_key: str = Security(api_key_header), db: Session = Depe
         raise HTTPException(status_code=403, detail="Invalid API Key. Access Denied.")
     return user
 
+from pydantic import BaseModel
+import bcrypt
+
+# --- NEW AUTO-LOGIN ENDPOINT ---
+class SDKLogin(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/v1/sdk_login")
+def sdk_login_endpoint(credentials: SDKLogin, db: Session = Depends(get_db)):
+    # Find the user
+    user = db.query(User).filter(User.email == credentials.email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    # Check the password (CORRECTED: Ensure both are encoded as bytes)
+    if not bcrypt.checkpw(credentials.password.encode('utf-8'), user.hashed_password.encode('utf-8')):
+        raise HTTPException(status_code=401, detail="Invalid password")
+        
+    # Success! Hand the API key back to the Python SDK
+    return {"api_key": user.api_key}
+
+# --- UPDATED TRACK ENDPOINT ---
 @app.post("/api/v1/track")
 def receive_drift_data(
     payload: Dict[str, Any], 
-    background_tasks: BackgroundTasks, 
-    user: User = Depends(get_current_user)
+    background_tasks: BackgroundTasks
 ):
     """Catches the drift data from the pip package and saves it to the dashboard"""
     ensure_dirs()
@@ -676,6 +699,7 @@ def receive_drift_data(
     items.insert(0, normalize_history_item(payload))
     idx["items"] = items[:200] 
     idx["count"] = len(idx["items"])
+    from datetime import datetime
     idx["generated_at"] = datetime.now().isoformat(timespec="seconds")
     write_json_atomic(HISTORY_INDEX_JSON, idx)
     
@@ -691,19 +715,17 @@ def receive_drift_data(
         # Add the email to the background queue so the API returns instantly
         background_tasks.add_task(
             send_critical_alert,
-            recipient_email=user.email,
+            recipient_email="ryomensukuna2530@gmail.com",  # FIXED: Prevents NameError
             run_id=run_id,
             feature=feature,
             ks_score=ks_score,
             health=health
         )
-    # ---------------------------------------------------------
+    # ----------------------------------
 
-    return {
-        "status": "success", 
-        "message": f"Drift payload received for user {user.email}",
-        "run_id": run_id
-    }
+    # FIXED: Return statement correctly moved to the very end!
+    return {"status": "success", "run_id": run_id}
+    # ---------------------------------------------------------
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------

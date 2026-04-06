@@ -1,3 +1,12 @@
+# Web Server & Database
+fastapi
+uvicorn
+sqlalchemy
+bcrypt
+pydantic
+requests
+
+# Data Science & Math
 numpy
 pandas
 scipy
